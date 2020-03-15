@@ -91,7 +91,6 @@ static void SubmitMsg(struct message* msg, bool last_pkt){
 
 /* event handler, called when a packet is passed from the lower layer at the 
    receiver */
-void stop(){}
 void Receiver_FromLowerLayer(struct packet *pkt)
 {
     /* 2-byte header indicating the chsum */
