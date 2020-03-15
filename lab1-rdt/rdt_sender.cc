@@ -212,7 +212,7 @@ void Sender_Timeout()
     Sender_ToLowerLayer(timer.pkt);
     fprintf(stdout, "At %.2fs: timeout and resending pkt %d to lower layer\n", GetSimulationTime(), seq_num);
     Add_Timer(timer.pkt, GetSimulationTime() + TIME_OUT);
-    // update timer.
+    // update timer
     while(!timers.empty()){
         if(timers.front().done){
             fprintf(stdout, "At %.2fs: pop out timer for pkt %d\n", GetSimulationTime(), getSeqNum(timers.front().pkt));
