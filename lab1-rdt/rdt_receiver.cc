@@ -24,19 +24,15 @@
 
 
 
-static bool last_buffer[SEQUNCE_SIZE] = {};
-static struct message * recv_buffer[SEQUNCE_SIZE] = {};
-static seq_nr_t expected_seq = 0;
-static std::list<struct message *> message_slices; 
 
+static bool buffer_flag[SEQUNCE_SIZE] = {};
+static struct message * msg_buffer[SEQUNCE_SIZE] = {};
+static seq_nr_t expected_seq = 0;
+static std::list<struct message *> submit_buffer; 
 /* receiver initialization, called once at the very beginning */
 void Receiver_Init()
 {
     fprintf(stdout, "At %.2fs: receiver initializing ...\n", GetSimulationTime());
-    for(int i = 0; i < SEQUNCE_SIZE; i ++){
-        recv_buffer[i] = nullptr;
-        last_buffer[i] = false;
-    }
 }
 
 /* receiver finalization, called once at the very end.
@@ -60,32 +56,30 @@ void Ack_seq(seq_nr_t seq_num){
 }
 static void SubmitMsg(struct message* msg, bool last_pkt){
     ASSERT(msg);
-    if(last_pkt){// build msg and toupper layer
+    if(last_pkt){// build msg and to upper layer
         int size = 0;
-        for(auto message : message_slices){
+        for(auto message : submit_buffer){
             size += message->size;
         }
         size += msg->size;
-
         struct message *final_msg = (struct message *) malloc(sizeof(struct message));
         final_msg->size = size;
         final_msg->data = (char *)malloc(size);
         int cursor = 0;
-        for(auto& message :message_slices){
+        for(auto& message :submit_buffer){
             memcpy(final_msg->data+cursor, message->data, message->size);
             cursor += message->size;
             free(message->data);
             free(message);
         }
         memcpy(final_msg->data+cursor, msg->data, msg->size);
-        assert(cursor + msg->size == size);
         fprintf(stdout,"submiting \n");
         Receiver_ToUpperLayer(final_msg);
         free(msg->data);
         free(msg);
-        message_slices.clear();
+        submit_buffer.clear();
     }else{
-        message_slices.push_back(msg);
+        submit_buffer.push_back(msg);
     }
 }
 
@@ -108,7 +102,7 @@ void Receiver_FromLowerLayer(struct packet *pkt)
     // int checklength = (unsigned char)msg->size + 2;
     int checklength = msg->size + 2;
     // fprintf(stdout,"checklength,%d\n",checklength);
-    if ( *(uint16_t*)(pkt->data)!= crc_16((const unsigned char *)pkt->data + 2,checklength))
+    if ( *(uint16_t*)(pkt->data) != crc_16((const unsigned char *)pkt->data + 2,checklength))
     {
         fprintf(stdout, "At %.2fs: packet checksum mismatch\n", GetSimulationTime());
         return ;
@@ -126,26 +120,25 @@ void Receiver_FromLowerLayer(struct packet *pkt)
     msg->data = (char*) malloc(msg->size);
     ASSERT(msg->data);
     memcpy(msg->data, pkt->data+header_size, msg->size);
-    // Receiver_ToUpperLayer(msg);
 
     if(seq_num == expected_seq){ // this seq num, update state.
         SubmitMsg(msg,last_pkt);
         inc(expected_seq, SEQUNCE_SIZE);
         //flush receive buffer to msg slices.
-        while (recv_buffer[expected_seq] != nullptr)
+        while (msg_buffer[expected_seq] != nullptr)
         {
-            SubmitMsg(recv_buffer[expected_seq], last_buffer[expected_seq]);
-            recv_buffer[expected_seq] = nullptr;
-            last_buffer[expected_seq] = 0;
+            SubmitMsg(msg_buffer[expected_seq], buffer_flag[expected_seq]);
+            msg_buffer[expected_seq] = nullptr;
+            buffer_flag[expected_seq] = false;
             inc(expected_seq, SEQUNCE_SIZE);
         }
         //reply ack for this seqnum.
         Ack_seq((expected_seq - 1) % SEQUNCE_SIZE);
         
     }else { // other seq num, store in buffer
-        if(recv_buffer[seq_num] == nullptr){
-            recv_buffer[seq_num] = msg;
-            last_buffer[seq_num ] = last_pkt;
+        if(msg_buffer[seq_num] == nullptr){
+            msg_buffer[seq_num] = msg;
+            buffer_flag[seq_num ] = last_pkt;
         }
         else {
             /* don't forget to free the space */
